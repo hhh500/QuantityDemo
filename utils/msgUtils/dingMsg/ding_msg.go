@@ -2,24 +2,41 @@ package dingMsg
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
-func SendDingMessage(webhook string, message string) error {
+func hmacSha256(stringToSign string, secret string) string {
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write([]byte(stringToSign))
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func getSignUrl(webhook, secret string) string {
+	timestamp := time.Now().UnixNano() / 1e6
+	stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)
+	sign := hmacSha256(stringToSign, secret)
+	url := fmt.Sprintf("%s&timestamp=%d&sign=%s", webhook, timestamp, sign)
+	return url
+}
+
+func SendDingMessage(webhook, secret, msg string) error {
 	payload := map[string]interface{}{
 		"msgtype": "text",
 		"text": map[string]string{
-			"content": message,
+			"content": msg,
 		},
 	}
-	body, _ := json.Marshal(payload)
-	resp, err := http.Post(webhook, "application/json", bytes.NewBuffer(body))
+	byteArr, _ := json.Marshal(payload)
+	resp, err := http.Post(getSignUrl(webhook, secret), "application/json", bytes.NewBuffer(byteArr))
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	fmt.Println("钉钉返回状态:", resp.Status)
+	resp.Body.Close()
 	return nil
 }
